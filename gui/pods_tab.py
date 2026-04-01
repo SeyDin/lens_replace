@@ -1,4 +1,5 @@
 import logging
+from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from functools import partial
 from tkinter import ttk, messagebox, filedialog
@@ -18,19 +19,20 @@ class PodsTab(tk.Frame):
         self.pods = []
         self.filtered_pods = []
         self.default_searches_buttons: list[ttk.Button] = []
-        # map each default search button to its label text (avoids setting dynamic attributes on Tk widgets)
         self._default_search_text: dict[ttk.Button, str] = {}
         self.selected_pod = None
         self.namespace_nodes = {}
         self.right_click_pod_name = None
         self.status_bar = status_bar
         self.indicator_images = {}
+        self.executor = ThreadPoolExecutor(max_workers=2)
 
         self._last_find_query = ""
         self._last_find_index = "1.0"
 
         self._init_paned()
         self.create_widgets()
+        self.bind("<Destroy>", self._on_destroy, add="+")
 
     def _init_paned(self):
         self.paned = tk.PanedWindow(self, orient=tk.HORIZONTAL, sashrelief=tk.RAISED, sashwidth=8)
@@ -47,6 +49,10 @@ class PodsTab(tk.Frame):
             "yellow": self._create_indicator_image("#f1c40f"),
             "red": self._create_indicator_image("#e74c3c"),
         }
+
+    def _on_destroy(self, event):
+        if event.widget is self:
+            self.executor.shutdown(wait=False, cancel_futures=True)
 
     def create_widgets(self):
         self._init_indicator_images()
@@ -224,6 +230,7 @@ class PodsTab(tk.Frame):
         pos = self.pod_logs.search(query, start, stopindex="1.0", nocase=True, backwards=True)
         if not pos:
             pos = self.pod_logs.search(query, tk.END, stopindex=start, nocase=True, backwards=True)
+        if not pos:
             return
 
         end = f"{pos}+{len(query)}c"
@@ -298,7 +305,6 @@ class PodsTab(tk.Frame):
         return "break"
 
     def copy_selected_logs(self, event=None):
-        # Protect against None event when this method is invoked programmatically
         if event is not None and getattr(event, 'keycode', None) == 67:
             try:
                 text = self.pod_logs.get(tk.SEL_FIRST, tk.SEL_LAST)
@@ -310,7 +316,6 @@ class PodsTab(tk.Frame):
         return
 
     def search_default(self, button: ttk.Button):
-        # read the label text from the mapping to avoid adding arbitrary attributes on tkinter widgets
         text = self._default_search_text.get(button) or button.cget("text")
         self.search_var.set(text)
         self.search_pods()
@@ -330,16 +335,26 @@ class PodsTab(tk.Frame):
         self.status_bar.set_status("Loading pods ...")
         self.pods_tree.delete(*self.pods_tree.get_children())
         self.namespace_nodes.clear()
+        self.selected_pod = None
+        self.pod_logs.delete(1.0, tk.END)
+        self.clear_find_tags()
+        self.refresh_btn["state"] = "disabled"
+        self.download_btn["state"] = "disabled"
+        future = self.executor.submit(self.kube.list_pods)
+        future.add_done_callback(lambda f: self.after(0, self._handle_pods_future, f))
+
+    def _handle_pods_future(self, future):
         try:
-            pods = self.kube.list_pods()
-            self.pods = pods
-            self.filtered_pods = pods
-            self._fill_treeview(self.filtered_pods)
+            pods = future.result()
         except Exception as e:
             logger.exception("Ошибка при получении подов: %s", e)
             messagebox.showerror("Ошибка", f"Ошибка при получении подов: {e}")
-        finally:
             self.status_bar.reset_status()
+            return
+        self.pods = pods
+        self.filtered_pods = pods
+        self._fill_treeview(self.filtered_pods)
+        self.status_bar.reset_status()
 
     def _fill_treeview(self, pods, open_: bool = False):
         self.pods_tree.delete(*self.pods_tree.get_children())
@@ -407,7 +422,6 @@ class PodsTab(tk.Frame):
         self.refresh_btn["state"] = "normal"
         self.download_btn["state"] = "normal"
         self.show_pod_logs(pod)
-        self.status_bar.reset_status()
 
     def on_right_click(self, event):
         item_id = self.pods_tree.identify_row(event.y)
@@ -425,29 +439,51 @@ class PodsTab(tk.Frame):
             self.clipboard_append(self.right_click_pod_name)
 
     def show_pod_logs(self, pod):
+        if pod is None:
+            return
         self.pod_logs.delete(1.0, tk.END)
         self.clear_find_tags()
+        self.pod_logs.insert(tk.END, "Loading logs...")
+        self.status_bar.set_status(f"Loading logs for {pod.metadata.name} ...")
+        pod_name = pod.metadata.name
+        namespace = pod.metadata.namespace
+        future = self.executor.submit(self._fetch_pod_logs, pod_name, namespace)
+        future.add_done_callback(lambda f: self.after(0, self._handle_pod_logs_future, pod_name, namespace, f))
+
+    def _fetch_pod_logs(self, pod_name: str, namespace: str) -> str:
+        logs = self.kube.get_pod_logs(
+            name=pod_name,
+            namespace=namespace,
+            tail_lines=1000
+        )
+        return delete_color_marks(logs)
+
+    def _handle_pod_logs_future(self, pod_name: str, namespace: str, future):
+        if not self.selected_pod:
+            return
+        if self.selected_pod.metadata.name != pod_name or self.selected_pod.metadata.namespace != namespace:
+            return
         try:
-            logs = self.kube.get_pod_logs(
-                name=pod.metadata.name,
-                namespace=pod.metadata.namespace,
-                tail_lines=1000
-            )
-            self.status_bar.set_status("Clearing logs from color-marks ...")
-            logs = delete_color_marks(logs)
-            self.pod_logs.insert(tk.END, logs)
-            self.pod_logs.see(tk.END)
-            if self.find_frame.winfo_ismapped():
-                self.highlight_find_matches()
+            logs = future.result()
         except Exception as e:
             logger.exception("Ошибка при получении логов: %s", e)
+            self.pod_logs.delete(1.0, tk.END)
             self.pod_logs.insert(tk.END, f"Ошибка при получении логов: {e}")
             self.pod_logs.see(tk.END)
+            self.status_bar.reset_status()
+            return
+        self.pod_logs.delete(1.0, tk.END)
+        self.pod_logs.insert(tk.END, logs)
+        self.pod_logs.see(tk.END)
+        if self.find_frame.winfo_ismapped():
+            self.highlight_find_matches()
+        self.status_bar.reset_status()
 
     def refresh_logs(self):
         if self.selected_pod:
             self.show_pod_logs(self.selected_pod)
-        self.status_bar.reset_status()
+        else:
+            self.status_bar.reset_status()
 
     def download_logs(self):
         if not self.selected_pod:

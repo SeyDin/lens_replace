@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import ttk, messagebox
 
@@ -15,17 +16,17 @@ class DeploymentsTab(tk.Frame):
         self.selected_deployment = None
         self.search_var = tk.StringVar()
         self.default_searches_buttons: list[ttk.Button] = []
-        self.pods_tab = pods_tab  # ссылка на вкладку с подами
-        self.notebook = notebook  # ссылка на ttk.Notebook
+        self.pods_tab = pods_tab
+        self.notebook = notebook
         self.status_bar = status_bar
+        self.executor = ThreadPoolExecutor(max_workers=1)
         self.create_widgets()
+        self.bind("<Destroy>", self._on_destroy, add="+")
 
     def create_widgets(self):
-        # --- Основная рамка для содержимого ---
         self.content_frame = tk.Frame(self)
         self.content_frame.pack(fill="both", expand=True)
 
-        # Treeview для отображения деплойментов по namespace
         self.tree = ttk.Treeview(self.content_frame)
         self.tree.pack(side="left", fill="y")
         self.tree["columns"] = ("replicas",)
@@ -48,11 +49,9 @@ class DeploymentsTab(tk.Frame):
         self.scale_btn = tk.Button(self.scale_frame, text="Изменить", command=self.on_scale_click)
         self.scale_btn.pack(side="left")
 
-        # --- Кнопка перехода к подам deployment ---
         self.goto_pods_btn = tk.Button(self.scale_frame, text="Перейти к подам deployment", command=self.goto_deployment_pods)
         self.goto_pods_btn.pack(side="left", padx=(10, 0))
 
-        # --- Поиск ---
         self.search_frame = tk.Frame(self)
         self.search_frame.pack(side="bottom", fill="x", padx=5, pady=5)
 
@@ -74,9 +73,12 @@ class DeploymentsTab(tk.Frame):
         self.reset_btn = ttk.Button(self.search_frame, text="Сбросить", command=self.reset_deployments)
         self.reset_btn.pack(side="left")
 
-        # --- Кнопка обновления ---
         self.refresh_btn = ttk.Button(self.scale_frame, text="Обновить информацию о deployment", command=self.load_deployments)
         self.refresh_btn.pack(side="left", padx=(10, 0))
+
+    def _on_destroy(self, event):
+        if event.widget is self:
+            self.executor.shutdown(wait=False, cancel_futures=True)
 
     def on_ctrl_f(self, event=None):
         if not self.winfo_ismapped():
@@ -87,16 +89,26 @@ class DeploymentsTab(tk.Frame):
 
     def load_deployments(self):
         self.status_bar.set_status("Load deployments ...")
+        self.tree.delete(*self.tree.get_children())
+        self.deployment_info.delete(1.0, tk.END)
+        self.replicas_entry.delete(0, tk.END)
+        self.selected_deployment = None
+        future = self.executor.submit(self.kube.list_deployments)
+        future.add_done_callback(lambda f: self.after(0, self._handle_deployments_future, f))
+
+    def _handle_deployments_future(self, future):
         try:
-            deployments = self.kube.list_deployments()
-            self.deployments = deployments
-            self.filtered_deployments = deployments
-            self._fill_treeview(self.filtered_deployments)
-            self.deployment_info.delete(1.0, tk.END)
-            self.replicas_entry.delete(0, tk.END)
-            self.selected_deployment = None
+            deployments = future.result()
         except Exception as e:
             messagebox.showerror("Ошибка", f"Ошибка при получении деплойментов: {e}")
+            self.status_bar.reset_status()
+            return
+        self.deployments = deployments
+        self.filtered_deployments = deployments
+        self._fill_treeview(self.filtered_deployments)
+        self.deployment_info.delete(1.0, tk.END)
+        self.replicas_entry.delete(0, tk.END)
+        self.selected_deployment = None
         self.status_bar.reset_status()
 
     def _fill_treeview(self, deployments):
