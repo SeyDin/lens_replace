@@ -56,7 +56,7 @@ class KubeconfigFrame(tk.Frame):
         self.kubeconfig_btn = ttk.Button(self, text="Выбрать kubeconfig", command=self.on_select)
         self.kubeconfig_btn.grid(row=0, column=0, sticky="nw", padx=0, pady=0)
 
-        self.reconnect_btn = ttk.Button(self, text="Reconnect", command=self.on_reconnect)
+        self.reconnect_btn = ttk.Button(self, text="Reconnect (Refresh)", command=self.on_reconnect)
         self.reconnect_btn.grid(row=0, column=1, sticky="nw", padx=(8, 0), pady=0)
 
         self.status_bar = status_bar
@@ -90,7 +90,11 @@ class KubeconfigFrame(tk.Frame):
             messagebox.showwarning("Предупреждение", "Нет сохраненного kubeconfig для переподключения")
             return
 
+        self.status_bar.set_status(f"Refresh подключения к kubeconfig: {last_path}...")
+        self.update_idletasks()
+
         if connect_kubeconfig(last_path, self.kube, self.on_success, self.on_error):
-            self.status_bar.set_status(f"Переподключено к kubeconfig: {last_path}")
+            self.status_bar.set_status(f"Refresh подключения завершен: {last_path}")
             self.update_reconnect_button_state()
-            messagebox.showinfo("Успех", f"Переподключение выполнено по {last_path}")
+        else:
+            self.status_bar.set_status(f"Ошибка refresh подключения: {last_path}")
