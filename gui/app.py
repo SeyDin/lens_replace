@@ -32,31 +32,23 @@ class KubeGUI(tk.Tk):
         self.auto_refresh_after_id = None
         self.refresh_age_after_id = None
 
+        self._create_menu()
+
         self.toolbar_frame = tk.Frame(self)
         self.toolbar_frame.pack(anchor="nw", fill="x", padx=10, pady=(10, 0))
 
-        self.refresh_settings_btn = ttk.Button(
-            self.toolbar_frame,
-            text="Настройки автообновления",
-            command=self.open_refresh_settings,
-        )
-        self.refresh_settings_btn.pack(side="left")
-
-        self.default_search_names_btn = ttk.Button(
-            self.toolbar_frame,
-            text="Настройки строк поиска",
-            command=self.open_default_search_names_settings,
-        )
-        self.default_search_names_btn.pack(side="left", padx=(8, 0))
-
-        self.last_refresh_var = tk.StringVar(value="Последнее обновление: ещё не выполнялось")
-        self.last_refresh_label = ttk.Label(self.toolbar_frame, textvariable=self.last_refresh_var)
-        self.last_refresh_label.pack(side="left", padx=(12, 0))
-
         self.status_bar = StatusBar(self)
 
-        self.kubeconfig_frame = KubeconfigFrame(self, self.kube, on_success=self.on_kubeconfig_selected, status_bar=self.status_bar)
-        self.kubeconfig_frame.pack(anchor="nw", fill="x", padx=10, pady=10)
+        self.kubeconfig_frame = KubeconfigFrame(self.toolbar_frame, self.kube, on_success=self.on_kubeconfig_selected, status_bar=self.status_bar)
+        self.kubeconfig_frame.pack(side="right", anchor="center")
+
+        self.last_refresh_var = tk.StringVar(value="Последнее обновление: ещё не выполнялось")
+        self.last_refresh_label = ttk.Label(
+            self.toolbar_frame,
+            textvariable=self.last_refresh_var,
+            font=("TkDefaultFont", 8),
+        )
+        self.last_refresh_label.pack(side="right", anchor="center", padx=(0, 10))
 
         self.tabs = ttk.Notebook(self)
         self.pods_tab = PodsTab(self.tabs, self.kube, self.status_bar)
@@ -69,6 +61,27 @@ class KubeGUI(tk.Tk):
         self._start_refresh_age_updater()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.kubeconfig_frame.autoload()
+
+    def _create_menu(self):
+        self.menu_bar = tk.Menu(self)
+
+        self.settings_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.settings_menu.add_command(
+            label="Выбрать kubeconfig",
+            command=self.select_kubeconfig_from_menu,
+        )
+        self.settings_menu.add_separator()
+        self.settings_menu.add_command(
+            label="Настройки автообновления",
+            command=self.open_refresh_settings,
+        )
+        self.settings_menu.add_command(
+            label="Настройки строк поиска",
+            command=self.open_default_search_names_settings,
+        )
+        self.menu_bar.add_cascade(label="Настройки", menu=self.settings_menu)
+
+        self.config(menu=self.menu_bar)
 
     def _set_app_icon(self):
         base_dir = os.path.dirname(__file__)
@@ -116,6 +129,9 @@ class KubeGUI(tk.Tk):
             self.after_cancel(self.refresh_age_after_id)
             self.refresh_age_after_id = None
         self.destroy()
+
+    def select_kubeconfig_from_menu(self):
+        self.kubeconfig_frame.on_select()
 
     def open_refresh_settings(self):
         if self.refresh_settings_window and self.refresh_settings_window.winfo_exists():

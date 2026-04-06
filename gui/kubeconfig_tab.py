@@ -121,11 +121,8 @@ class KubeconfigFrame(tk.Frame):
 
         self.grid_anchor("nw")
 
-        self.kubeconfig_btn = ttk.Button(self, text="Выбрать kubeconfig", command=self.on_select)
-        self.kubeconfig_btn.grid(row=0, column=0, sticky="nw", padx=0, pady=0)
-
         self.reconnect_btn = ttk.Button(self, text="Reconnect (Refresh)", command=self.on_reconnect)
-        self.reconnect_btn.grid(row=0, column=1, sticky="nw", padx=(8, 0), pady=0)
+        self.reconnect_btn.grid(row=0, column=0, sticky="nw", padx=0, pady=0)
 
         self.status_bar = status_bar
         self.update_reconnect_button_state()
