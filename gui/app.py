@@ -1,6 +1,10 @@
+import os
+import sys
 import time
 import tkinter as tk
 from tkinter import ttk
+
+from app_logger import logger
 from gui.default_search_names_window import DefaultSearchNamesWindow
 from gui.pods_tab import PodsTab
 from gui.deployments_tab import DeploymentsTab
@@ -15,6 +19,8 @@ class KubeGUI(tk.Tk):
         super().__init__()
         self.title("Kubernetes VIBE GUI")
         self.geometry("1300x800")
+        self._icon_image = None
+        self._set_app_icon()
 
         self.kube = kube_client
         self.kubeconfig = None
@@ -63,6 +69,27 @@ class KubeGUI(tk.Tk):
         self._start_refresh_age_updater()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
         self.kubeconfig_frame.autoload()
+
+    def _set_app_icon(self):
+        base_dir = os.path.dirname(__file__)
+        ico_path = os.path.join(base_dir, "assets", "app_icon.ico")
+        png_path = os.path.join(base_dir, "assets", "app_icon.png")
+
+        try:
+            if sys.platform.startswith("win") and os.path.exists(ico_path):
+                self.iconbitmap(ico_path)
+                return
+
+            if not os.path.exists(png_path):
+                self._icon_image = tk.PhotoImage(file=png_path)
+                self.iconphoto(True, self._icon_image)
+                return
+
+            if os.path.exists(ico_path):
+                self.iconbitmap(ico_path)
+        except Exception as e:
+            logger.exception(str(e))
+            pass
 
     def _bind_global_shortcuts(self):
         self.bind_all("<Control-KeyPress>", self._on_ctrl_f, add="+")
