@@ -1,0 +1,42 @@
+name: Build Windows EXE
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: lens_repl/requirements.txt
+
+      - name: Install dependencies
+        working-directory: lens_repl
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Build with PyInstaller
+        working-directory: lens_repl
+        run: |
+          pyinstaller main.spec
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lens_repl-windows
+          path: |
+            lens_repl/dist/**
+            lens_repl/build/**
+          if-no-files-found: error
