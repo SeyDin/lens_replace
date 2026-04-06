@@ -1,3 +1,4 @@
+import json
 import os
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -5,18 +6,85 @@ from tkinter import ttk, filedialog, messagebox
 from gui.status_bar import StatusBar
 
 LAST_KUBECONFIG_PATH = os.path.expanduser("../.lens_repl_last_kubeconfig")
+DEFAULT_SEARCH_NAMES_LIMIT = 9
+DEFAULT_SEARCH_NAMES_FALLBACK = ["runtime", "aitunnel", "openai"]
+
+
+def _normalize_default_search_names(search_names):
+    if not isinstance(search_names, list):
+        return DEFAULT_SEARCH_NAMES_FALLBACK.copy()
+
+    normalized = []
+    for item in search_names:
+        value = str(item).strip()
+        if not value or value in normalized:
+            continue
+        normalized.append(value)
+        if len(normalized) >= DEFAULT_SEARCH_NAMES_LIMIT:
+            break
+
+    if not normalized:
+        return DEFAULT_SEARCH_NAMES_FALLBACK.copy()
+    return normalized
+
+
+def _load_config_data():
+    if not os.path.exists(LAST_KUBECONFIG_PATH):
+        return {
+            "kubeconfig_path": None,
+            "default_search_names": DEFAULT_SEARCH_NAMES_FALLBACK.copy(),
+        }
+
+    with open(LAST_KUBECONFIG_PATH, "r", encoding="utf-8") as f:
+        content = f.read().strip()
+
+    if not content:
+        return {
+            "kubeconfig_path": None,
+            "default_search_names": DEFAULT_SEARCH_NAMES_FALLBACK.copy(),
+        }
+
+    try:
+        data = json.loads(content)
+    except json.JSONDecodeError:
+        return {
+            "kubeconfig_path": content,
+            "default_search_names": DEFAULT_SEARCH_NAMES_FALLBACK.copy(),
+        }
+
+    return {
+        "kubeconfig_path": data.get("kubeconfig_path") or None,
+        "default_search_names": _normalize_default_search_names(data.get("default_search_names")),
+    }
+
+
+def _save_config_data(data):
+    config = {
+        "kubeconfig_path": data.get("kubeconfig_path") or None,
+        "default_search_names": _normalize_default_search_names(data.get("default_search_names")),
+    }
+    with open(LAST_KUBECONFIG_PATH, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=2)
 
 
 def save_last_kubeconfig(path):
-    with open(LAST_KUBECONFIG_PATH, "w", encoding="utf-8") as f:
-        f.write(path)
+    config = _load_config_data()
+    config["kubeconfig_path"] = path
+    _save_config_data(config)
 
 
 def load_last_kubeconfig():
-    if os.path.exists(LAST_KUBECONFIG_PATH):
-        with open(LAST_KUBECONFIG_PATH, "r", encoding="utf-8") as f:
-            return f.read().strip()
-    return None
+    return _load_config_data()["kubeconfig_path"]
+
+
+def load_default_search_names():
+    return _load_config_data()["default_search_names"]
+
+
+def save_default_search_names(search_names):
+    config = _load_config_data()
+    config["default_search_names"] = search_names
+    _save_config_data(config)
 
 
 def connect_kubeconfig(path, kube, on_success=None, on_error=None, show_error=True):

@@ -4,6 +4,7 @@ import tkinter as tk
 from functools import partial
 from tkinter import ttk, messagebox, filedialog
 
+from gui.kubeconfig_tab import load_default_search_names
 from gui.status_bar import StatusBar
 from gui.utils import format_pod_name, delete_color_marks
 from kube.k8s_client import KubeClient
@@ -68,13 +69,9 @@ class PodsTab(tk.Frame):
         self.search_btn = ttk.Button(self.search_frame, text="Поиск", command=self.search_pods)
         self.search_btn.pack(side="left", padx=(0, 5))
 
-        default_search_names = ["runtime", "aitunnel", "openai"]
-        for i, name in enumerate(default_search_names):
-            button = ttk.Button(self.search_frame, text=name)
-            button.config(command=partial(self.search_default, button))
-            button.pack(side="bottom", padx=(0, 5))
-            self.default_searches_buttons.append(button)
-            self._default_search_text[button] = name
+        self.default_searches_frame = tk.Frame(self.search_frame)
+        self.default_searches_frame.pack(side="left", padx=(0, 5))
+        self.apply_default_search_names(load_default_search_names())
 
         self.reset_btn = ttk.Button(self.search_frame, text="Сбросить", command=self.reset_pods)
         self.reset_btn.pack(side="left")
@@ -147,6 +144,19 @@ class PodsTab(tk.Frame):
         self.download_btn = ttk.Button(self.pod_log_frame, text="Скачать логи", command=self.download_logs)
         self.download_btn.pack(side="left")
         self.download_btn["state"] = "disabled"
+
+    def apply_default_search_names(self, search_names: list[str]):
+        for button in self.default_searches_buttons:
+            button.destroy()
+        self.default_searches_buttons.clear()
+        self._default_search_text.clear()
+
+        for name in search_names:
+            button = ttk.Button(self.default_searches_frame, text=name)
+            button.config(command=partial(self.search_default, button))
+            button.pack(side="left", padx=(0, 5))
+            self.default_searches_buttons.append(button)
+            self._default_search_text[button] = name
 
     def on_ctrl_f(self, event=None):
         if not self.winfo_ismapped():
@@ -321,6 +331,9 @@ class PodsTab(tk.Frame):
         self.search_pods()
 
     def fill_default_search_buttons(self, search_name: str) -> None:
+        search_name = search_name.strip()
+        if not search_name:
+            return
         existed_searchs = [self._default_search_text.get(x) or x.cget("text") for x in self.default_searches_buttons]
         if search_name in existed_searchs:
             return

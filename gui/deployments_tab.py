@@ -2,8 +2,10 @@ from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import ttk, messagebox
 
+from gui.kubeconfig_tab import load_default_search_names
 from gui.status_bar import StatusBar
 from kube.k8s_client import KubeClient
+
 
 # noinspection PyAttributeOutsideInit
 class DeploymentsTab(tk.Frame):
@@ -16,6 +18,7 @@ class DeploymentsTab(tk.Frame):
         self.selected_deployment = None
         self.search_var = tk.StringVar()
         self.default_searches_buttons: list[ttk.Button] = []
+        self._default_search_text: dict[ttk.Button, str] = {}
         self.pods_tab = pods_tab
         self.notebook = notebook
         self.status_bar = status_bar
@@ -62,19 +65,28 @@ class DeploymentsTab(tk.Frame):
         self.search_btn = ttk.Button(self.search_frame, text="Поиск", command=self.search_deployments)
         self.search_btn.pack(side="left", padx=(0, 5))
 
-        default_search_names = ["runtime", "aitunnel", "openai"]
-        for i in range(3):
-            button = ttk.Button(self.search_frame, text=default_search_names[i])
-            button.config(command=lambda b=button: self.search_default(b))
-            button.pack(side="bottom", padx=(0, 5))
-            button.search_text = default_search_names[i]
-            self.default_searches_buttons.append(button)
+        self.default_searches_frame = tk.Frame(self.search_frame)
+        self.default_searches_frame.pack(side="left", padx=(0, 5))
+        self.apply_default_search_names(load_default_search_names())
 
         self.reset_btn = ttk.Button(self.search_frame, text="Сбросить", command=self.reset_deployments)
         self.reset_btn.pack(side="left")
 
         self.refresh_btn = ttk.Button(self.scale_frame, text="Обновить информацию о deployment", command=self.load_deployments)
         self.refresh_btn.pack(side="left", padx=(10, 0))
+
+    def apply_default_search_names(self, search_names: list[str]):
+        for button in self.default_searches_buttons:
+            button.destroy()
+        self.default_searches_buttons.clear()
+        self._default_search_text.clear()
+
+        for name in search_names:
+            button = ttk.Button(self.default_searches_frame, text=name)
+            button.config(command=lambda b=button: self.search_default(b))
+            button.pack(side="left", padx=(0, 5))
+            self.default_searches_buttons.append(button)
+            self._default_search_text[button] = name
 
     def _on_destroy(self, event):
         if event.widget is self:
@@ -147,18 +159,21 @@ class DeploymentsTab(tk.Frame):
         self._fill_treeview(self.deployments)
 
     def search_default(self, button: ttk.Button):
-        self.search_var.set(button.search_text)
+        self.search_var.set(self._default_search_text.get(button) or button.cget("text"))
         self.search_deployments()
 
     def fill_default_search_buttons(self, search_name: str) -> None:
-        existed_searches = [x.search_text for x in self.default_searches_buttons]
+        search_name = search_name.strip()
+        if not search_name:
+            return
+        existed_searches = [self._default_search_text.get(x) or x.cget("text") for x in self.default_searches_buttons]
         if search_name in existed_searches:
             return
         else:
             existed_searches.pop(0)
             existed_searches.append(search_name)
             for i, button in enumerate(self.default_searches_buttons):
-                button.search_text = existed_searches[i]
+                self._default_search_text[button] = existed_searches[i]
                 button.configure(text=existed_searches[i])
 
     def on_deployment_select(self, event):
