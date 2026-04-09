@@ -22,16 +22,19 @@ class KubeClient:
             raise Exception("Kubernetes Apps API не инициализирован. Сначала вызовите load_config().")
         return self.apps_api.list_deployment_for_all_namespaces().items
 
-    def _read_pod_logs(self, name, namespace, tail_lines):
+    def _read_pod_logs(self, name, namespace, tail_lines=None):
         if not self.api:
             raise Exception("Kubernetes API не инициализирован. Сначала вызовите load_config().")
 
-        response = self.api.read_namespaced_pod_log(
-            name=name,
-            namespace=namespace,
-            tail_lines=tail_lines,
-            _preload_content=False
-        )
+        request_kwargs = {
+            "name": name,
+            "namespace": namespace,
+            "_preload_content": False
+        }
+        if tail_lines is not None:
+            request_kwargs["tail_lines"] = tail_lines
+
+        response = self.api.read_namespaced_pod_log(**request_kwargs)
         raw_logs = response.data if hasattr(response, "data") else response
 
         if isinstance(raw_logs, bytes):
@@ -39,6 +42,9 @@ class KubeClient:
         return str(raw_logs)
 
     def get_pod_logs(self, name, namespace, tail_lines=1000):
+        return self._read_pod_logs(name=name, namespace=namespace, tail_lines=tail_lines)
+
+    def get_pod_logs_page(self, name, namespace, tail_lines):
         return self._read_pod_logs(name=name, namespace=namespace, tail_lines=tail_lines)
 
     def download_pod_logs(self, name, namespace):

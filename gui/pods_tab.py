@@ -30,6 +30,11 @@ class PodsTab(tk.Frame):
 
         self._last_find_query = ""
         self._last_find_index = "1.0"
+        self._log_chunk_size = 1000
+        self._loaded_log_lines = 0
+        self._loading_more_logs = False
+        self._has_more_logs = False
+        self._log_request_token = 0
 
         self._init_paned()
         self.create_widgets()
@@ -127,13 +132,19 @@ class PodsTab(tk.Frame):
         self.pod_logs.pack(side="left", fill="both", expand=True)
         self.pod_logs.bind("<Control-KeyPress>", self.copy_selected_logs)
         self.pod_logs.bind("<Button-3>", self.on_logs_right_click)
+        self.pod_logs.bind("<MouseWheel>", self._on_log_mousewheel, add="+")
+        self.pod_logs.bind("<Button-4>", self._on_log_mousewheel_linux_up, add="+")
+        self.pod_logs.bind("<Button-5>", self._on_log_mousewheel_linux_down, add="+")
+        self.pod_logs.bind("<Prior>", self._on_log_navigation, add="+")
+        self.pod_logs.bind("<Up>", self._on_log_navigation, add="+")
+        self.pod_logs.bind("<Home>", self._on_log_navigation, add="+")
         self.pod_logs.tag_configure("find_match", background="#3a3a3a", foreground="#ffffff")
         self.pod_logs.tag_configure("find_current", background="#5c3b00", foreground="#ffffff")
 
         self.logs_context_menu = tk.Menu(self, tearoff=0)
         self.logs_context_menu.add_command(label="Скопировать", command=self.copy_selected_logs)
 
-        self.log_scrollbar = ttk.Scrollbar(self.logs_container, orient="vertical", command=self.pod_logs.yview)
+        self.log_scrollbar = ttk.Scrollbar(self.logs_container, orient="vertical", command=self._on_log_scrollbar)
         self.log_scrollbar.pack(side="right", fill="y")
         self.pod_logs.config(yscrollcommand=self.log_scrollbar.set)
 
@@ -325,6 +336,106 @@ class PodsTab(tk.Frame):
             return "break"
         return
 
+    def _reset_log_paging(self):
+        self._loading_more_logs = False
+        self._has_more_logs = False
+        self._loaded_log_lines = 0
+        self._log_request_token += 1
+
+    def _count_log_lines(self, logs: str) -> int:
+        if not logs:
+            return 0
+        return logs.count("\n") + (0 if logs.endswith("\n") else 1)
+
+    def _on_log_scrollbar(self, *args):
+        self.pod_logs.yview(*args)
+        self.after_idle(self._maybe_load_more_logs)
+
+    def _on_log_mousewheel(self, event):
+        if getattr(event, "delta", 0) > 0:
+            self.after_idle(self._maybe_load_more_logs)
+
+    def _on_log_mousewheel_linux_up(self, event):
+        self.after_idle(self._maybe_load_more_logs)
+
+    def _on_log_mousewheel_linux_down(self, event):
+        return
+
+    def _on_log_navigation(self, event):
+        self.after_idle(self._maybe_load_more_logs)
+
+    def _maybe_load_more_logs(self):
+        if not self.selected_pod or self._loading_more_logs or not self._has_more_logs:
+            return
+        first, _ = self.pod_logs.yview()
+        if first > 0:
+            return
+        current_logs = self.pod_logs.get("1.0", "end-1c")
+        if not current_logs.strip() or current_logs == "Loading logs...":
+            return
+        self._loading_more_logs = True
+        next_tail_lines = self._loaded_log_lines + self._log_chunk_size
+        pod_name = self.selected_pod.metadata.name
+        namespace = self.selected_pod.metadata.namespace
+        request_token = self._log_request_token
+        future = self.executor.submit(self._fetch_pod_logs_page, pod_name, namespace, next_tail_lines)
+        future.add_done_callback(lambda f: self.after(0, self._handle_more_pod_logs_future, pod_name, namespace, request_token, next_tail_lines, f))
+
+    def _fetch_pod_logs_page(self, pod_name: str, namespace: str, tail_lines: int) -> str:
+        logs = self.kube.get_pod_logs_page(
+            name=pod_name,
+            namespace=namespace,
+            tail_lines=tail_lines
+        )
+        return delete_color_marks(logs)
+
+    def _prepend_logs(self, older_logs: str):
+        if not older_logs:
+            self._has_more_logs = False
+            return
+        current_top_index = self.pod_logs.index("@0,0")
+        current_logs = self.pod_logs.get("1.0", "end-1c")
+        combined_logs = f"{older_logs}{current_logs}"
+        self.pod_logs.delete("1.0", tk.END)
+        self.pod_logs.insert("1.0", combined_logs)
+        self.pod_logs.see(current_top_index)
+        if self.find_frame.winfo_ismapped():
+            self.highlight_find_matches()
+
+    def _handle_more_pod_logs_future(self, pod_name: str, namespace: str, request_token: int, tail_lines: int, future):
+        self._loading_more_logs = False
+        if request_token != self._log_request_token:
+            return
+        if not self.selected_pod:
+            return
+        if self.selected_pod.metadata.name != pod_name or self.selected_pod.metadata.namespace != namespace:
+            return
+        try:
+            logs = future.result()
+        except Exception as e:
+            logger.exception("Ошибка при подгрузке логов: %s", e)
+            self.status_bar.reset_status()
+            return
+
+        current_logs = self.pod_logs.get("1.0", "end-1c")
+        if logs == current_logs:
+            self._has_more_logs = False
+            return
+
+        older_logs = ""
+        if current_logs and logs.endswith(current_logs):
+            older_logs = logs[:-len(current_logs)]
+        else:
+            older_logs = logs
+
+        if not older_logs:
+            self._has_more_logs = False
+            return
+
+        self._loaded_log_lines = self._count_log_lines(logs)
+        self._has_more_logs = self._count_log_lines(logs) >= tail_lines
+        self._prepend_logs(older_logs)
+
     def search_default(self, button: ttk.Button):
         text = self._default_search_text.get(button) or button.cget("text")
         self.search_var.set(text)
@@ -351,6 +462,7 @@ class PodsTab(tk.Frame):
         self.selected_pod = None
         self.pod_logs.delete(1.0, tk.END)
         self.clear_find_tags()
+        self._reset_log_paging()
         self.refresh_btn["state"] = "disabled"
         self.download_btn["state"] = "disabled"
         future = self.executor.submit(self.kube.list_pods)
@@ -390,6 +502,7 @@ class PodsTab(tk.Frame):
                 )
         self.pod_logs.delete(1.0, tk.END)
         self.clear_find_tags()
+        self._reset_log_paging()
         self.refresh_btn["state"] = "disabled"
         self.download_btn["state"] = "disabled"
 
@@ -418,6 +531,7 @@ class PodsTab(tk.Frame):
             self.download_btn["state"] = "disabled"
             self.pod_logs.delete(1.0, tk.END)
             self.clear_find_tags()
+            self._reset_log_paging()
             return
         item_id = selected[0]
         parent_id = self.pods_tree.parent(item_id)
@@ -427,6 +541,7 @@ class PodsTab(tk.Frame):
             self.download_btn["state"] = "disabled"
             self.pod_logs.delete(1.0, tk.END)
             self.clear_find_tags()
+            self._reset_log_paging()
             return
         ns = self.pods_tree.item(parent_id, "text")
         pod_name = self.pods_tree.item(item_id, "text").strip()
@@ -454,24 +569,28 @@ class PodsTab(tk.Frame):
     def show_pod_logs(self, pod):
         if pod is None:
             return
+        self._reset_log_paging()
         self.pod_logs.delete(1.0, tk.END)
         self.clear_find_tags()
         self.pod_logs.insert(tk.END, "Loading logs...")
         self.status_bar.set_status(f"Loading logs for {pod.metadata.name} ...")
         pod_name = pod.metadata.name
         namespace = pod.metadata.namespace
+        request_token = self._log_request_token
         future = self.executor.submit(self._fetch_pod_logs, pod_name, namespace)
-        future.add_done_callback(lambda f: self.after(0, self._handle_pod_logs_future, pod_name, namespace, f))
+        future.add_done_callback(lambda f: self.after(0, self._handle_pod_logs_future, pod_name, namespace, request_token, f))
 
     def _fetch_pod_logs(self, pod_name: str, namespace: str) -> str:
         logs = self.kube.get_pod_logs(
             name=pod_name,
             namespace=namespace,
-            tail_lines=1000
+            tail_lines=self._log_chunk_size
         )
         return delete_color_marks(logs)
 
-    def _handle_pod_logs_future(self, pod_name: str, namespace: str, future):
+    def _handle_pod_logs_future(self, pod_name: str, namespace: str, request_token: int, future):
+        if request_token != self._log_request_token:
+            return
         if not self.selected_pod:
             return
         if self.selected_pod.metadata.name != pod_name or self.selected_pod.metadata.namespace != namespace:
@@ -485,6 +604,8 @@ class PodsTab(tk.Frame):
             self.pod_logs.see(tk.END)
             self.status_bar.reset_status()
             return
+        self._loaded_log_lines = self._count_log_lines(logs)
+        self._has_more_logs = self._loaded_log_lines >= self._log_chunk_size
         self.pod_logs.delete(1.0, tk.END)
         self.pod_logs.insert(tk.END, logs)
         self.pod_logs.see(tk.END)
