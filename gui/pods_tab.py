@@ -146,7 +146,9 @@ class PodsTab(tk.Frame):
 
         self.log_scrollbar = ttk.Scrollbar(self.logs_container, orient="vertical", command=self._on_log_scrollbar)
         self.log_scrollbar.pack(side="right", fill="y")
-        self.pod_logs.config(yscrollcommand=self.log_scrollbar.set)
+        self.log_horizontal_scrollbar = ttk.Scrollbar(self.pod_log_frame, orient="horizontal", command=self.pod_logs.xview)
+        self.log_horizontal_scrollbar.pack(fill="x")
+        self.pod_logs.config(yscrollcommand=self.log_scrollbar.set, xscrollcommand=self.log_horizontal_scrollbar.set)
 
         self.refresh_btn = ttk.Button(self.pod_log_frame, text="Обновить", command=self.refresh_logs)
         self.refresh_btn.pack(side="left")
