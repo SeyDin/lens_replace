@@ -95,7 +95,7 @@ class KubeGUI(tk.Tk):
                 return
 
             if not os.path.exists(png_path):
-                self._icon_image = tk.PhotoImage(file=png_path)
+                self._icon_image = tk.PhotoImage(file=ico_path)
                 self.iconphoto(True, self._icon_image)
                 return
 

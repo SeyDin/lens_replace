@@ -1,5 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import sys
+
+icon_path = 'gui\\assets\\app_icon.ico' if sys.platform.startswith('win') else 'gui\\assets\\app_icon.png'
+
 
 a = Analysis(
     ['main.py'],
@@ -35,5 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['gui\\assets\\app_icon.png'],
+    icon=[icon_path],
 )
