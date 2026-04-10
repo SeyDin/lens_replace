@@ -94,13 +94,10 @@ class KubeGUI(tk.Tk):
                 self.iconbitmap(ico_path)
                 return
 
-            if not os.path.exists(png_path):
-                self._icon_image = tk.PhotoImage(file=ico_path)
+            else:
+                self._icon_image = tk.PhotoImage(file=png_path)
                 self.iconphoto(True, self._icon_image)
                 return
-
-            if os.path.exists(ico_path):
-                self.iconbitmap(ico_path)
         except Exception as e:
             logger.exception(str(e))
             pass
