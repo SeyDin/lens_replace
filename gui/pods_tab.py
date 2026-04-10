@@ -138,7 +138,7 @@ class PodsTab(tk.Frame):
         self.pod_logs.bind("<Prior>", self._on_log_navigation, add="+")
         self.pod_logs.bind("<Up>", self._on_log_navigation, add="+")
         self.pod_logs.bind("<Home>", self._on_log_navigation, add="+")
-        self.pod_logs.tag_configure("find_match", background="#1E90FF", foreground="#ffffff")
+        self.pod_logs.tag_configure("find_match", background="#3a3a3a", foreground="#ffffff")
         self.pod_logs.tag_configure("find_current", background="#5c3b00", foreground="#ffffff")
 
         self.logs_context_menu = tk.Menu(self, tearoff=0)

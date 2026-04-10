@@ -37,7 +37,8 @@ class DefaultSearchNamesWindow(tk.Toplevel):
             ttk.Label(row, text=f"{i}.", width=3).pack(side="left")
             var = tk.StringVar(value=value)
             self.search_name_vars.append(var)
-            ttk.Entry(row, textvariable=var, width=40).pack(side="left", fill="x", expand=True)
+            entry = ttk.Entry(row, textvariable=var, width=40)
+            entry.pack(side="left", fill="x", expand=True)
 
         self.error_label = ttk.Label(container, text="", foreground="#c0392b")
         self.error_label.pack(anchor="w", pady=(8, 0))

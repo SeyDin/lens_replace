@@ -12,6 +12,7 @@ from gui.kubeconfig_tab import KubeconfigFrame, load_default_search_names, save_
 from gui.refresh_settings_window import RefreshSettingsWindow
 from kube.k8s_client import KubeClient
 from gui.status_bar import StatusBar
+from gui.utils import handle_text_shortcuts
 
 
 class KubeGUI(tk.Tk):
@@ -105,7 +106,13 @@ class KubeGUI(tk.Tk):
             pass
 
     def _bind_global_shortcuts(self):
-        self.bind_all("<Control-KeyPress>", self._on_ctrl_f, add="+")
+        self.bind_all("<Control-KeyPress>", self._on_global_ctrl_key, add="+")
+
+    def _on_global_ctrl_key(self, event=None):
+        shortcut_result = handle_text_shortcuts(event)
+        if shortcut_result == "break":
+            return shortcut_result
+        return self._on_ctrl_f(event)
 
     def _on_ctrl_f(self, event=None):
         if event.keycode == 70:
