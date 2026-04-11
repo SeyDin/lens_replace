@@ -1,8 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+import os
 import sys
 
-icon_path = 'gui\\assets\\app_icon.ico' if sys.platform.startswith('win') else 'gui\\assets\\app_icon.png'
+icon_path = os.path.join('gui', 'assets', 'app_icon.ico') if sys.platform.startswith('win') else os.path.join('gui', 'assets', 'app_icon.png')
 
 
 a = Analysis(

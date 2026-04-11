@@ -1,47 +1,27 @@
-name: Build artifacts
+name: Release artifacts
 
 on:
   push:
-    branches:
-      - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
-  build-windows:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: 'pip'
-          cache-dependency-path: requirements.txt
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pyinstaller
-
-      - name: Build with PyInstaller
-        run: |
-          pyinstaller main.spec
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: lens_repl-windows
-          path: |
-            dist/**
-            build/**
-          if-no-files-found: error
-
-  build-linux:
+  create-release:
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+
+  release-windows:
+    needs: create-release
+    runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -64,11 +44,50 @@ jobs:
         run: |
           pyinstaller main.spec
 
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+      - name: Rename EXE for release
+        shell: pwsh
+        run: |
+          Rename-Item -Path dist\main.exe -NewName lens_repl-${{ github.ref_name }}-windows.exe
+
+      - name: Upload Windows asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
-          name: lens_repl-linux
-          path: |
-            dist/**
-            build/**
-          if-no-files-found: error
+          files: dist/lens_repl-${{ github.ref_name }}-windows.exe
+
+  release-linux:
+    needs: create-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller main.spec
+
+      - name: Rename binary for release
+        run: |
+          mv dist/main dist/lens_repl-${{ github.ref_name }}-linux
+
+      - name: Upload Linux asset to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/lens_repl-${{ github.ref_name }}-linux
