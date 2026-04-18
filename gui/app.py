@@ -10,6 +10,7 @@ from gui.pods_tab import PodsTab
 from gui.deployments_tab import DeploymentsTab
 from gui.kubeconfig_tab import KubeconfigFrame, load_default_search_names, save_default_search_names
 from gui.refresh_settings_window import RefreshSettingsWindow
+from gui.refresh_timer_formatter import RefreshTimerFormatter
 from kube.k8s_client import KubeClient
 from gui.status_bar import StatusBar
 from gui.utils import handle_text_shortcuts
@@ -32,6 +33,7 @@ class KubeGUI(tk.Tk):
         self.last_refresh_timestamp = None
         self.auto_refresh_after_id = None
         self.refresh_age_after_id = None
+        self.refresh_timer_formatter = RefreshTimerFormatter()
 
         self._create_menu()
 
@@ -181,11 +183,9 @@ class KubeGUI(tk.Tk):
         self.refresh_age_after_id = self.after(1000, self._start_refresh_age_updater)
 
     def _update_last_refresh_label(self):
-        if self.last_refresh_timestamp is None:
-            self.last_refresh_var.set("Последнее обновление: ещё не выполнялось")
-            return
-        seconds_ago = int(time.time() - self.last_refresh_timestamp)
-        self.last_refresh_var.set(f"Последнее обновление: {seconds_ago} сек назад")
+        self.last_refresh_var.set(
+            self.refresh_timer_formatter.format_last_refresh_message(self.last_refresh_timestamp)
+        )
 
     def _schedule_auto_refresh(self):
         if self.auto_refresh_after_id is not None:
